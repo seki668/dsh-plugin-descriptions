@@ -1,15 +1,16 @@
 # dsh-plugin-descriptions
 
-给 dsh Web 的「插件」设置区新增一个 **插件说明** 标签页：在官方「插件列表」的基础上，为每个 Cordis 插件显示一句话中文功能说明、完整包名、entryId 和挂载状态，并按功能域分组展示；支持搜索和分类/启用状态过滤。
+给 dsh Web 的「插件」设置区新增一个 **插件说明** 标签页：在官方「插件列表」的基础上，为每个 Cordis 插件显示功能说明、完整包名、entryId 和挂载状态，并按功能域分组展示；支持搜索和分类/启用状态过滤。
 
-官方列表（`@deepseek-ai/dsh-client-ui-settings-plugin-inventory`）只投影 `entryId / moduleName / enabled / fiberPhase`，没有描述字段，本插件在浏览器端用一张内置对照表补齐说明，不修改任何官方包。
+说明来源按优先级为：**内置中文说明 > 插件包自带 `package.json` 的 description（自动读取，无需改代码）> “暂无说明”**。因此未来新增的插件装上后会自动出现在本页并带上它自己的英文描述；想换成中文时再往内置表补一条即可。官方列表只投影 `entryId / moduleName / enabled / fiberPhase`，本插件不修改任何官方包。
 
 ## 效果
 
 - 位置：设置 → 插件 → 「插件说明」（排在官方「插件列表」前面，官方页不受影响）
-- 每个卡片：短名、启用/停用标签、挂载状态点、完整包名、中文说明、entryId、Cordis 状态
+- 每个卡片：短名、启用/停用标签、挂载状态点、完整包名、功能说明、说明来源（内置说明 / 自动读取）、entryId、Cordis 状态
 - 分组：基础框架与运行时 / LLM 与模型 / 会话与持久化 / 设置、凭据与存储 / 沙箱与权限 / 技能与指令 / 目标与计划 / 压缩与输出治理 / 子代理与工作流 / 模型可用工具 / Web 服务端 / 浏览器界面 / 第三方扩展 / 其他
 - 支持：搜索（名称/包名/说明/分类名）、分类下拉过滤、全部/已启用/已停用过滤
+- 自动支持新增插件：新插件无需改本包代码，页面自动显示其 `package.json` 里的 description
 
 ## 安装（无需 pnpm）
 
@@ -42,10 +43,18 @@ dsh web --patch ".\cordis.patch.yml"
 
 ## 工作原理
 
-1. `package.json` 声明 `dsh.client`（platform: web + 依赖注入图），宿主侧 `lib/index.js` 是无行为占位。
+1. `package.json` 声明 `dsh.client`（platform: web + 依赖注入图）；宿主侧 `lib/index.js` 注册一个 GET 路由 `/api/dsh-plugin-descriptions`。
 2. `cordis.patch.yml` 通过 `dsh.bundle.patch` 向 Loader 插入一个条目（id `ui-plugin-guide`，name 为本包名）；安装脚本把包名加入 profile 的 `dsh.profile.bundles`，组合器会自动应用该补丁。
 3. `dsh-client-modules` 扫描到本条目后，把 `lib/client.js` 作为浏览器插件加入 `__DSH_BOOT__`，并通过 `/plugins/<包名>/client.js` 提供。
-4. 浏览器端插件注入 `slots / locale / remote.pluginInventory`，向 `settings.plugins.tab` 注册 id 为 `guide` 的标签页；数据仍来自官方只读 Remote `pluginInventory.list()`，说明由内置 `DESCRIPTIONS` 表按 `moduleName` 匹配，个别同名模块按 `entryId` 精确区分。
+4. 宿主路由在**每次请求时**遍历当前 Loader 条目，用 `createRequire(ctx.baseUrl)` 解析每个条目的包，读取其 `package.json` 的 `name / version / description` 返回 JSON；因此新增插件不需要重启本插件或改任何代码。
+5. 浏览器端插件注入 `slots / locale / remote.pluginInventory`，向 `settings.plugins.tab` 注册 id 为 `guide` 的标签页；清单仍来自官方只读 Remote `pluginInventory.list()`，说明按「内置中文表 → 宿主元数据 → 暂无说明」的顺序选择。
+
+## 自动支持未来新增插件的机制
+
+- **描述**：宿主端在运行时解析 Loader 里每个条目的包根（支持 `@scope/name/subpath` 和 `cordis:` 内置项），读取包自带 `package.json` 的 `description`；无需手工登记。
+- **分类**：`categoryOf()` 先用 `CATEGORY_OVERRIDES` 精确匹配，再按包名前缀规则自动归类（如 `dsh-tool-*` → 模型可用工具、`dsh-client-ui-*` → 浏览器界面、`@linxin666/*` → 第三方扩展）；无法识别时落入「其他 / 未收录」。
+- **中文覆盖**：想给某个新增插件补中文说明，只需在 `DESCRIPTIONS` 里加一条；不加也照样显示英文原版描述，并在卡片上标注「自动读取」。
+- 新安装一个插件后，重新打开本页即可（描述是请求时解析的）；如果是本页自身升级，需重跑 `install.mjs` 并重启 dsh web。
 
 ## 目录结构
 
@@ -54,8 +63,8 @@ dsh-plugin-descriptions/
 ├─ package.json        # dsh.client / dsh.bundle 声明
 ├─ cordis.patch.yml    # Loader 补丁（插入宿主条目）
 ├─ lib/
-│  ├─ index.js         # 宿主侧空实现
-│  └─ client.js        # 浏览器端插件（UI + 说明数据）
+│  ├─ index.js         # 宿主侧：包元数据 HTTP 路由
+│  └─ client.js        # 浏览器端插件（UI + 内置说明 + 自动元数据合并）
 ├─ install.mjs         # 安装脚本
 ├─ uninstall.mjs       # 卸载脚本
 └─ test/smoke.mjs      # 无浏览器冒烟测试
@@ -72,6 +81,6 @@ dsh-plugin-descriptions/
 
 ## 限制
 
-- 说明数据为内置静态表，收录 dsh 0.1.0-rc.6 web profile 的官方条目和当前安装的 @linxin666 全家桶；未来新增的插件若不在表内，会显示“暂无说明”。
-- 官方 Remote 接口没有描述字段，本插件不改数据协议，因此无法自动读取包 `package.json` 的描述（那是浏览器拿不到的信息）。
+- 自动描述来自各插件包 `package.json` 的 `description`（通常是英文）；内置表收录 dsh 0.1.0-rc.6 web profile 的官方条目和 @linxin666 全家桶的中文说明，优先级更高。
+- `package.json` 没有 description（或被 `exports` 限制又无法解析入口）的插件仍会显示“暂无说明”。
 - 未修改、未替换官方「插件列表」标签页，两个标签页可以并存。

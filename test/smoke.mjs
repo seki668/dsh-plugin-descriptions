@@ -102,6 +102,30 @@ if (plugin.__debug.categoryOf(snapshot.entries[0]) !== "session") throw new Erro
 if (plugin.__debug.categoryOf(snapshot.entries[1]) !== "subagents") throw new Error("分类断言 2 失败");
 if (plugin.__debug.categoryOf(snapshot.entries[2]) !== "other") throw new Error("分类断言 3 失败");
 
+// 宿主元数据：模拟 /api/dsh-plugin-descriptions 返回一个未来新增插件的 package.json 描述。
+globalThis.fetch = async (url) => {
+  if (url !== "/api/dsh-plugin-descriptions") throw new Error(`unexpected fetch url: ${url}`);
+  return {
+    ok: true,
+    json: async () => ({
+      descriptions: {
+        "some-unknown-plugin": { package: "some-unknown-plugin", version: "1.0.0", description: "A brand new plugin" }
+      }
+    })
+  };
+};
+await plugin.__debug.loadHostDescriptions();
+const future = { entryId: "future", moduleName: "some-unknown-plugin", enabled: true, fiberPhase: "active" };
+if (plugin.__debug.descriptionOf(future, (key) => key) !== "A brand new plugin") {
+  throw new Error("未自动读取宿主端描述");
+}
+if (plugin.__debug.sourceOf(future) !== "auto") throw new Error("自动描述来源判断错误");
+if (!plugin.__debug.matches(future, "brand new")) throw new Error("搜索未命中自动描述");
+const futureCard = JSON.stringify(plugin.__debug.renderEntryCard(future, (key) => key));
+if (!futureCard.includes("A brand new plugin") || !futureCard.includes("sourceAuto")) {
+  throw new Error("自动描述未渲染到卡片");
+}
+
 console.log("smoke test OK");
 console.log(`  注册标签: ${calls.register.spec.id} (order ${calls.register.spec.order})`);
 console.log(`  说明条目数: ${Object.keys(plugin.__debug.DESCRIPTIONS).length}`);
