@@ -102,7 +102,7 @@ if (plugin.__debug.categoryOf(snapshot.entries[0]) !== "session") throw new Erro
 if (plugin.__debug.categoryOf(snapshot.entries[1]) !== "subagents") throw new Error("分类断言 2 失败");
 if (plugin.__debug.categoryOf(snapshot.entries[2]) !== "other") throw new Error("分类断言 3 失败");
 
-// 宿主元数据：模拟 /api/dsh-plugin-descriptions 返回一个未来新增插件的 package.json 描述。
+// 宿主元数据：模拟 /api/dsh-plugin-descriptions 返回一个未内置收录插件的 package.json 描述。
 globalThis.fetch = async (url) => {
   if (url !== "/api/dsh-plugin-descriptions") throw new Error(`unexpected fetch url: ${url}`);
   return {
