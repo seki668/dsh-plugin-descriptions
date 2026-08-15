@@ -1,0 +1,5 @@
+# 本包作为 profile bundle 时自动应用的补丁层：
+# 在 Loader 中注册一个宿主条目，浏览器端由 lib/client.js 提供“插件说明”标签页。
+- insert:
+    - id: ui-plugin-guide
+      name: 'dsh-plugin-descriptions'
